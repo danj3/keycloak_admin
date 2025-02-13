@@ -26,7 +26,8 @@ defmodule KeycloakAdmin.TokenCache do
     :client_secret,
     :provider,
     :token,
-    :ttl
+    :ttl,
+    :exp_at_s
   ]
   
   def callback_mode, do: :state_functions
@@ -49,7 +50,7 @@ defmodule KeycloakAdmin.TokenCache do
     {:next_state, :have_token, state,
      [
        {:next_event, :internal, :get_token},
-       {:next_event, {:call, from}, :send_token}
+       {:next_event, {:call, from}, :get_token}
      ]
     }
   end
@@ -62,19 +63,23 @@ defmodule KeycloakAdmin.TokenCache do
         state.client_secret,
         %{}
       )
-    {:keep_state, %{state | token: token},
+    
+    {:keep_state, %{state |
+      token: token,
+      exp_at_s: System.monotonic_time(:second)+ttl,
+    },
      [
        {{:timeout, :expire}, ttl*1000, :access_expired}
      ]
-    }
+    } |> dbg()
   end
 
 
-  def have_token({:call, from}, :send_token, state) do
+  def have_token({:call, from}, :get_token, state) do
     {:keep_state, state, [{:reply, from, state.token}]}
   end
 
   def have_token({:timeout, :expire}, :access_expired, state) do
-    {:next_state, :no_token, %{state | token: nil}}
+    {:next_state, :no_token, %{state | token: nil}} |> dbg
   end
 end
